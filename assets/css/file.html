@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Smart Aadhaar Autofill</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4.0.2/dist/tesseract.min.js"></script>
+  <style>
+    body {
+      font-family: Arial;
+      background: #f0f0f0;
+      padding: 20px;
+      text-align: center;
+    }
+    .form-container {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      display: inline-block;
+    }
+    input {
+      width: 300px;
+      padding: 10px;
+      margin: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="form-container">
+    <h2>Aadhaar Registration Form</h2>
+    <input type="file" id="fileInput" accept=".pdf, image/*"><br>
+
+    <form>
+      <input type="text" id="name" placeholder="Name"><br>
+      <input type="text" id="aadhaar" placeholder="Aadhaar Number"><br>
+      <input type="date" id="dob" placeholder="Date of Birth"><br>
+      <input type="text" id="gender" placeholder="Gender"><br>
+    </form>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+
+    fileInput.addEventListener('change', function () {
+      const file = this.files[0];
+      if (!file) return;
+
+      const fileType = file.type;
+
+      if (fileType === 'application/pdf') {
+        extractFromPDF(file);
+      } else if (fileType.startsWith('image/')) {
+        extractFromImage(file);
+      } else {
+        alert('Please upload a PDF or image file');
+      }
+    });
+
+    function extractFromPDF(file) {
+      const reader = new FileReader();
+      reader.onload = function () {
+        const typedarray = new Uint8Array(this.result);
+        pdfjsLib.getDocument(typedarray).promise.then(function (pdf) {
+          pdf.getPage(1).then(function (page) {
+            page.getTextContent().then(function (textContent) {
+              const textItems = textContent.items.map(item => item.str);
+              const fullText = textItems.join(' ');
+              if (fullText.length < 50) {
+                console.log("Text too short, trying OCR...");
+                extractFromImage(file); // fallback to OCR
+              } else {
+                extractFields(fullText);
+              }
+            });
+          });
+        }).catch(err => {
+          console.log("PDF.js failed:", err);
+          extractFromImage(file); // fallback to OCR
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function extractFromImage(file) {
+      Tesseract.recognize(
+        file,
+        'eng',
+        { logger: m => console.log(m) }
+      ).then(({ data: { text } }) => {
+        extractFields(text);
+      });
+    }
+
+    function extractFields(text) {
+      console.log("Extracted Text:", text);
+
+      const nameMatch = text.match(/Name\s*[:\-]?\s*([A-Z\s]+)/i);
+      const dobMatch = text.match(/(?:DOB|D\.O\.B|Birth)\s*[:\-]?\s*(\d{2}\/\d{2}\/\d{4})/i);
+      const genderMatch = text.match(/Gender\s*[:\-]?\s*(Male|Female|Other)/i);
+      const aadhaarMatch = text.match(/(\d{4}\s\d{4}\s\d{4})/);
+
+      document.getElementById('name').value = nameMatch ? nameMatch[1].trim() : '';
+      document.getElementById('dob').value = dobMatch ? formatDate(dobMatch[1]) : '';
+      document.getElementById('gender').value = genderMatch ? genderMatch[1] : '';
+      document.getElementById('aadhaar').value = aadhaarMatch ? aadhaarMatch[1].replace(/\s/g, '') : '';
+    }
+
+    function formatDate(d) {
+      const parts = d.split('/');
+      return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    }
+  </script>
+
+</body>
+</html>
